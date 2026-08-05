@@ -405,11 +405,10 @@ inline FilePtr FOpen(const char* path) {
   // to stdio. Zone names are potentially attacker-controlled, and a plain
   // fopen() on a FIFO or device node (reachable via the "file:" prefix or an
   // absolute path) would block indefinitely or read unbounded data.
-  int flags = O_RDONLY | O_NONBLOCK;
-#ifdef O_CLOEXEC
-  flags |= O_CLOEXEC;
+#ifndef O_CLOEXEC
+#define O_CLOEXEC 0
 #endif
-  const int fd = open(path, flags);
+  const int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
   if (fd >= 0) {
     struct stat st;
     if (fstat(fd, &st) == 0 && S_ISREG(st.st_mode)) {
