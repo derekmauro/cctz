@@ -32,6 +32,12 @@
 
 #include "time_zone_info.h"
 
+#if !defined(_MSC_VER)
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -41,6 +47,7 @@
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -335,6 +342,14 @@ bool TimeZoneInfo::ExtendTransitions() {
     return EquivTransitions(transitions_.back().type_index, dst_ti);
   }
 
+  // We require that zoneinfo data with a rule for future transitions
+  // ends with a non-negative transition.  This removes the need to add
+  // any "second-half" transition to ensure differences between adjacent
+  // transitions are always representable, while also guaranteeing that
+  // the arithmetic used to shift between 400-year cycles never overflows.
+  // All valid zones easily meet this requirement.
+  if (transitions_.back().unix_time < 0) return false;
+
   // Extend the transitions for an additional 401 years using the future
   // specification. Years beyond those can be handled by mapping back to
   // a cycle-equivalent year within that range. Note that we need 401
@@ -379,16 +394,54 @@ namespace {
 
 using FilePtr = std::unique_ptr<FILE, int(*)(FILE*)>;
 
-// fopen(3) adaptor.
-inline FilePtr FOpen(const char* path, const char* mode) {
+// fopen(3) adaptor for reading zoneinfo files (read-only binary mode).
+inline FilePtr FOpen(const char* path) {
 #if defined(_MSC_VER)
   FILE* fp;
-  if (fopen_s(&fp, path, mode) != 0) fp = nullptr;
+  if (fopen_s(&fp, path, "rb") != 0) fp = nullptr;
   return FilePtr(fp, fclose);
 #else
-  // TODO: Enable the close-on-exec flag.
-  return FilePtr(fopen(path, mode), fclose);
+  // Open non-blocking and verify the target is a regular file before handing it
+  // to stdio. Zone names are potentially attacker-controlled, and a plain
+  // fopen() on a FIFO or device node (reachable via the "file:" prefix or an
+  // absolute path) would block indefinitely or read unbounded data.
+#ifndef O_CLOEXEC
+#define O_CLOEXEC 0
 #endif
+  const int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+  if (fd >= 0) {
+    struct stat st;
+    if (fstat(fd, &st) == 0 && S_ISREG(st.st_mode)) {
+      FILE* fp = fdopen(fd, "rb");
+      if (fp != nullptr) return FilePtr(fp, fclose);
+    }
+    close(fd);
+  }
+  return FilePtr(nullptr, fclose);
+#endif
+}
+
+// Returns true if c separates path components. Windows accepts either
+// form, so a "..\" component walks up a directory just like a "../" one.
+inline bool IsPathSeparator(char c) {
+#if defined(_WIN32)
+  return c == '/' || c == '\\';
+#else
+  return c == '/';
+#endif
+}
+
+// Returns true if the zone name starting at pos contains an unsafe path.
+bool UnsafePath(const std::string& name, std::size_t pos) {
+  // Path traversal: a ".." component that is at the beginning or preceded
+  // by a separator, and at the end or followed by a separator.
+  for (auto i = pos; (i = name.find("..", i)) != std::string::npos; i += 2) {
+    if ((i == pos || IsPathSeparator(name[i - 1])) &&
+        (i == name.size() - 2 || IsPathSeparator(name[i + 2]))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // A stdio(3)-backed implementation of ZoneInfoSource.
@@ -428,6 +481,11 @@ std::unique_ptr<ZoneInfoSource> FileZoneInfoSource::Open(
   // Use of the "file:" prefix is intended for testing purposes only.
   const std::size_t pos = (name.compare(0, 5, "file:") == 0) ? 5 : 0;
 
+  // Reject unsafe paths (e.g., "../../etc/passwd").
+  if (UnsafePath(name, pos)) {
+    return nullptr;
+  }
+
   // Map the time-zone name to a path name.
   std::string path;
   if (pos == name.size() || name[pos] != '/') {
@@ -448,7 +506,7 @@ std::unique_ptr<ZoneInfoSource> FileZoneInfoSource::Open(
   path.append(name, pos, std::string::npos);
 
   // Open the zoneinfo file.
-  auto fp = FOpen(path.c_str(), "rb");
+  auto fp = FOpen(path.c_str());
   if (fp == nullptr) return nullptr;
   return std::unique_ptr<ZoneInfoSource>(new FileZoneInfoSource(std::move(fp)));
 }
@@ -474,7 +532,7 @@ std::unique_ptr<ZoneInfoSource> AndroidZoneInfoSource::Open(
   for (const char* tzdata : {"/apex/com.android.tzdata/etc/tz/tzdata",
                              "/data/misc/zoneinfo/current/tzdata",
                              "/system/usr/share/zoneinfo/tzdata"}) {
-    auto fp = FOpen(tzdata, "rb");
+    auto fp = FOpen(tzdata);
     if (fp == nullptr) continue;
 
     char hbuf[24];  // covers header.zonetab_offset too
@@ -494,9 +552,12 @@ std::unique_ptr<ZoneInfoSource> AndroidZoneInfoSource::Open(
     if (zonecnt * sizeof(ebuf) != index_size) continue;
     for (std::size_t i = 0; i != zonecnt; ++i) {
       if (fread(ebuf, 1, sizeof(ebuf), fp.get()) != sizeof(ebuf)) break;
-      const std::int_fast32_t start = data_offset + Decode32(ebuf + 40);
+      const std::int_fast64_t start =
+          std::int_fast64_t{data_offset} + Decode32(ebuf + 40);
       const std::int_fast32_t length = Decode32(ebuf + 44);
       if (start < 0 || length < 0) break;
+      // fseek() takes a long
+      if (start > std::numeric_limits<long>::max()) break;
       ebuf[40] = '\0';  // ensure zone name is NUL terminated
       if (strcmp(name.c_str() + pos, ebuf) == 0) {
         if (fseek(fp.get(), static_cast<long>(start), SEEK_SET) != 0) break;
@@ -533,6 +594,11 @@ std::unique_ptr<ZoneInfoSource> FuchsiaZoneInfoSource::Open(
   // Use of the "file:" prefix is intended for testing purposes only.
   const std::size_t pos = (name.compare(0, 5, "file:") == 0) ? 5 : 0;
 
+  // Reject unsafe paths (e.g., "../../etc/passwd").
+  if (UnsafePath(name, pos)) {
+    return nullptr;
+  }
+
   // Prefixes where a Fuchsia component might find zoneinfo files,
   // in descending order of preference.
   const auto kTzdataPrefixes = {
@@ -557,7 +623,7 @@ std::unique_ptr<ZoneInfoSource> FuchsiaZoneInfoSource::Open(
     if (!prefix.empty()) path += "zoneinfo/tzif2/";  // format
     path.append(name, pos, std::string::npos);
 
-    auto fp = FOpen(path.c_str(), "rb");
+    auto fp = FOpen(path.c_str());
     if (fp == nullptr) continue;
 
     std::string version;
@@ -689,11 +755,14 @@ bool TimeZoneInfo::Load(ZoneInfoSource* zip) {
   for (std::size_t i = 0; i != hdr.timecnt; ++i) {
     transitions_[i].unix_time = (time_len == 4) ? Decode32(bp) : Decode64(bp);
     bp += time_len;
-    if (i != 0) {
-      // Check that the transitions are ordered by time (as zic guarantees).
-      if (!Transition::ByUnixTime()(transitions_[i - 1], transitions_[i]))
-        return false;  // out of order
-    }
+    // A valid zoneinfo file keeps transition times far from the int64 limits.
+    // A hostile one can place them at the extremes, where the reverse-conversion
+    // arithmetic in MakeTime() (tr.unix_time +/- a sub-day civil delta, see
+    // MakeSkipped()/MakeRepeated()) overflows. Bound them to +/-(1<<59), the
+    // times used by the no-op transitions added below.
+    if (transitions_[i].unix_time < -(1LL << 59) ||
+        transitions_[i].unix_time > (1LL << 59))
+      return false;  // out of range
   }
   bool seen_type_0 = false;
   for (std::size_t i = 0; i != hdr.timecnt; ++i) {
@@ -735,7 +804,13 @@ bool TimeZoneInfo::Load(ZoneInfoSource* zip) {
       default_transition_type_ = static_cast<std::uint_fast8_t>(index);
   }
 
-  // Copy all the abbreviations.
+  // Copy all the abbreviations. The area holds NUL-terminated strings, and
+  // LocalTime() hands out a pointer into it, so the final abbreviation has
+  // to be terminated within the area itself. Otherwise an abbreviation runs
+  // on into whatever ExtendTransitions() later appends. (hdr.charcnt != 0
+  // because every abbr_index was validated to be less than it.)
+  if (bp[hdr.charcnt - 1] != '\0')
+    return false;
   abbreviations_.reserve(hdr.charcnt + 10);
   abbreviations_.assign(bp, hdr.charcnt);
   bp += hdr.charcnt;
@@ -794,6 +869,7 @@ bool TimeZoneInfo::Load(ZoneInfoSource* zip) {
   // previous transition is always representable, without overflow.
   const Transition& last(transitions_.back());
   if (last.unix_time < 0) {
+    assert(!extended_);
     const std::uint_fast8_t type_index = last.type_index;
     Transition& tr(*transitions_.emplace(transitions_.end()));
     tr.unix_time = 2147483647;  // 2038-01-19T03:14:07+00:00
@@ -809,11 +885,13 @@ bool TimeZoneInfo::Load(ZoneInfoSource* zip) {
     ttp = &transition_types_[tr.type_index];
     tr.civil_sec = LocalTime(tr.unix_time, *ttp).cs;
     if (i != 0) {
-      // Check that the transitions are ordered by civil time. Essentially
-      // this means that an offset change cannot cross another such change.
-      // No one does this in practice, and we depend on it in MakeTime().
-      if (!Transition::ByCivilTime()(transitions_[i - 1], tr))
+      // Check that offset changes don't cross each other. No one
+      // does this in practice, and we depend on increasing absolute
+      // and civil times in BreakTime() and MakeTime() respectively.
+      if (!Transition::ByUnixTime()(transitions_[i - 1], tr) ||
+          !Transition::ByCivilTime()(transitions_[i - 1], tr)) {
         return false;  // out of order
+      }
     }
   }
 
