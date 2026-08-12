@@ -25,6 +25,7 @@
 #include <limits>
 #include <ratio>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include "cctz/civil_time.h"
@@ -402,13 +403,13 @@ inline std::pair<time_point<seconds>, seconds> split_seconds(
 template <typename Rep, std::intmax_t Denom>
 bool join_seconds(
     const time_point<seconds>& sec, const femtoseconds& fs,
-    time_point<std::chrono::duration<Rep, std::ratio<1, Denom>>>* tpp) {
+    time_point<std::chrono::duration<Rep, std::ratio<1, Denom>>>* tpp,
+    std::true_type /* is_integral */) {
   using D = std::chrono::duration<Rep, std::ratio<1, Denom>>;
-  // Use a 64-bit representation for intermediate subsecond calculations
-  // to avoid premature overflow if Rep is a smaller type (e.g., int8_t).
-  using D_check = std::chrono::duration<std::int64_t, std::ratio<1, Denom>>;
-  auto count = sec.time_since_epoch().count();
-  auto sub = std::chrono::duration_cast<D_check>(fs).count();  // [0, Denom)
+  using D_check = std::chrono::duration<std::intmax_t, std::ratio<1, Denom>>;
+  const auto count = static_cast<std::intmax_t>(sec.time_since_epoch().count());
+  const auto sub =
+      std::chrono::duration_cast<D_check>(fs).count();  // [0, Denom)
 
   // Check for overflow.
   if (sub > (std::numeric_limits<Rep>::max)()) {
@@ -422,19 +423,40 @@ bool join_seconds(
   }
 
   // Check for underflow.
-  // Equivalent to: count * Denom + sub < min, but safe from underflow.
-  // We cannot use "min - sub" directly as it would underflow.
-  const auto min_div = (std::numeric_limits<Rep>::min)() / Denom;
+  // Equivalent to: count * Denom + sub < lowest, but safe from underflow.
+  // We cannot use "lowest - sub" directly as it would underflow.
+  const auto min_div = (std::numeric_limits<Rep>::lowest)() / Denom;
   if (count < min_div) {
     // If count is less than min_div - 1, it's definitely underflow.
     if (count < min_div - 1) return false;
     // If count is exactly min_div - 1, we must check if subseconds are
-    // sufficient to bring the total value back above min.
-    const auto min_mod = (std::numeric_limits<Rep>::min)() % Denom;
+    // sufficient to bring the total value back above lowest.
+    const auto min_mod = (std::numeric_limits<Rep>::lowest)() % Denom;
     if (sub < Denom + min_mod) return false;
+    *tpp =
+        time_point<D>() + D{static_cast<Rep>(min_div * Denom + (sub - Denom))};
+    return true;
   }
   *tpp = time_point<D>() + D{static_cast<Rep>(count * Denom + sub)};
   return true;
+}
+
+template <typename Rep, std::intmax_t Denom>
+bool join_seconds(
+    const time_point<seconds>& sec, const femtoseconds& fs,
+    time_point<std::chrono::duration<Rep, std::ratio<1, Denom>>>* tpp,
+    std::false_type /* is_integral */) {
+  using D = std::chrono::duration<Rep, std::ratio<1, Denom>>;
+  *tpp = std::chrono::time_point_cast<D>(sec);
+  *tpp += std::chrono::duration_cast<D>(fs);
+  return true;
+}
+
+template <typename Rep, std::intmax_t Denom>
+bool join_seconds(
+    const time_point<seconds>& sec, const femtoseconds& fs,
+    time_point<std::chrono::duration<Rep, std::ratio<1, Denom>>>* tpp) {
+  return join_seconds(sec, fs, tpp, std::is_integral<Rep>());
 }
 
 template <typename Rep, std::intmax_t Num>
@@ -450,7 +472,8 @@ bool join_seconds(
     count -= 1;
   }
   if (count > (std::numeric_limits<Rep>::max)()) return false;
-  if (count < (std::numeric_limits<Rep>::min)()) return false;
+  if (count < (std::numeric_limits<Rep>::lowest)())
+    return false;
   *tpp = time_point<D>() + D{static_cast<Rep>(count)};
   return true;
 }
@@ -462,7 +485,8 @@ bool join_seconds(
   using D = std::chrono::duration<Rep, std::ratio<1, 1>>;
   auto count = sec.time_since_epoch().count();
   if (count > (std::numeric_limits<Rep>::max)()) return false;
-  if (count < (std::numeric_limits<Rep>::min)()) return false;
+  if (count < (std::numeric_limits<Rep>::lowest)())
+    return false;
   *tpp = time_point<D>() + D{static_cast<Rep>(count)};
   return true;
 }
