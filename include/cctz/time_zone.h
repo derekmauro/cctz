@@ -267,15 +267,20 @@ std::string format(const std::string&, const time_point<seconds>&,
 bool parse(const std::string&, const std::string&, const time_zone&,
            time_point<seconds>*, femtoseconds*, std::string* err = nullptr);
 template <typename Rep, std::intmax_t Denom>
-bool join_seconds(
+typename std::enable_if<std::is_integral<Rep>::value, bool>::type join_seconds(
     const time_point<seconds>& sec, const femtoseconds& fs,
     time_point<std::chrono::duration<Rep, std::ratio<1, Denom>>>* tpp);
+template <typename Rep, std::intmax_t Num, std::intmax_t Denom>
+typename std::enable_if<std::is_floating_point<Rep>::value, bool>::type
+join_seconds(
+    const time_point<seconds>& sec, const femtoseconds& fs,
+    time_point<std::chrono::duration<Rep, std::ratio<Num, Denom>>>* tpp);
 template <typename Rep, std::intmax_t Num>
-bool join_seconds(
+typename std::enable_if<std::is_integral<Rep>::value, bool>::type join_seconds(
     const time_point<seconds>& sec, const femtoseconds& fs,
     time_point<std::chrono::duration<Rep, std::ratio<Num, 1>>>* tpp);
 template <typename Rep>
-bool join_seconds(
+typename std::enable_if<std::is_integral<Rep>::value, bool>::type join_seconds(
     const time_point<seconds>& sec, const femtoseconds& fs,
     time_point<std::chrono::duration<Rep, std::ratio<1, 1>>>* tpp);
 bool join_seconds(const time_point<seconds>& sec, const femtoseconds&,
@@ -365,13 +370,17 @@ inline std::string format(const std::string& fmt, const time_point<D>& tp,
 //   if (cctz::parse("%Y-%m-%d", "2015-10-09", tz, &tp)) {
 //     ...
 //   }
-template <typename D>
+template <typename Rep, typename Period>
 inline bool parse(const std::string& fmt, const std::string& input,
-                  const time_zone& tz, time_point<D>* tpp) {
+                  const time_zone& tz,
+                  time_point<std::chrono::duration<Rep, Period>>* tpp) {
   time_point<seconds> sec;
   detail::femtoseconds fs;
-  return detail::parse(fmt, input, tz, &sec, &fs) &&
-         detail::join_seconds(sec, fs, tpp);
+  if (!detail::parse(fmt, input, tz, &sec, &fs)) return false;
+  time_point<std::chrono::duration<Rep, typename Period::type>> tp;
+  if (!detail::join_seconds(sec, fs, &tp)) return false;
+  *tpp = tp;
+  return true;
 }
 
 namespace detail {
@@ -401,13 +410,12 @@ inline std::pair<time_point<seconds>, seconds> split_seconds(
 // Floors to the resolution of time_point<D>. Returns false if time_point<D>
 // is not of sufficient range.
 template <typename Rep, std::intmax_t Denom>
-bool join_seconds(
+typename std::enable_if<std::is_integral<Rep>::value, bool>::type join_seconds(
     const time_point<seconds>& sec, const femtoseconds& fs,
-    time_point<std::chrono::duration<Rep, std::ratio<1, Denom>>>* tpp,
-    std::true_type /* is_integral */) {
+    time_point<std::chrono::duration<Rep, std::ratio<1, Denom>>>* tpp) {
   using D = std::chrono::duration<Rep, std::ratio<1, Denom>>;
   using D_check = std::chrono::duration<std::intmax_t, std::ratio<1, Denom>>;
-  const auto count = static_cast<std::intmax_t>(sec.time_since_epoch().count());
+  const std::intmax_t count = sec.time_since_epoch().count();
   const auto sub =
       std::chrono::duration_cast<D_check>(fs).count();  // [0, Denom)
 
@@ -441,26 +449,19 @@ bool join_seconds(
   return true;
 }
 
-template <typename Rep, std::intmax_t Denom>
-bool join_seconds(
+template <typename Rep, std::intmax_t Num, std::intmax_t Denom>
+typename std::enable_if<std::is_floating_point<Rep>::value, bool>::type
+join_seconds(
     const time_point<seconds>& sec, const femtoseconds& fs,
-    time_point<std::chrono::duration<Rep, std::ratio<1, Denom>>>* tpp,
-    std::false_type /* is_integral */) {
-  using D = std::chrono::duration<Rep, std::ratio<1, Denom>>;
+    time_point<std::chrono::duration<Rep, std::ratio<Num, Denom>>>* tpp) {
+  using D = std::chrono::duration<Rep, std::ratio<Num, Denom>>;
   *tpp = std::chrono::time_point_cast<D>(sec);
   *tpp += std::chrono::duration_cast<D>(fs);
   return true;
 }
 
-template <typename Rep, std::intmax_t Denom>
-bool join_seconds(
-    const time_point<seconds>& sec, const femtoseconds& fs,
-    time_point<std::chrono::duration<Rep, std::ratio<1, Denom>>>* tpp) {
-  return join_seconds(sec, fs, tpp, std::is_integral<Rep>());
-}
-
 template <typename Rep, std::intmax_t Num>
-bool join_seconds(
+typename std::enable_if<std::is_integral<Rep>::value, bool>::type join_seconds(
     const time_point<seconds>& sec, const femtoseconds&,
     time_point<std::chrono::duration<Rep, std::ratio<Num, 1>>>* tpp) {
   using D = std::chrono::duration<Rep, std::ratio<Num, 1>>;
@@ -478,14 +479,14 @@ bool join_seconds(
 }
 
 template <typename Rep>
-bool join_seconds(
+typename std::enable_if<std::is_integral<Rep>::value, bool>::type join_seconds(
     const time_point<seconds>& sec, const femtoseconds&,
     time_point<std::chrono::duration<Rep, std::ratio<1, 1>>>* tpp) {
   using D = std::chrono::duration<Rep, std::ratio<1, 1>>;
   auto count = sec.time_since_epoch().count();
   if (count > (std::numeric_limits<Rep>::max)()) return false;
   if (count < (std::numeric_limits<Rep>::lowest)()) return false;
-  *tpp = time_point<D>() + D{static_cast<Rep>(count)};
+  *tpp = std::chrono::time_point_cast<D>(sec);
   return true;
 }
 
