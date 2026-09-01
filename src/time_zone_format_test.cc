@@ -788,10 +788,14 @@ TEST(Parse, TimePointResolution) {
   time_point<chrono::minutes> tp_m;
   EXPECT_TRUE(parse(kFmt, "03:04:05", utc, &tp_m));
   EXPECT_EQ("03:04:00", cctz::format(kFmt, tp_m, utc));
+  EXPECT_TRUE(parse(RFC3339_full, "1969-12-31T23:59:05+00:00", utc, &tp_m));
+  EXPECT_EQ("1969-12-31T23:59:00+00:00", cctz::format(RFC3339_full, tp_m, utc));
 
   time_point<chrono::hours> tp_h;
   EXPECT_TRUE(parse(kFmt, "03:04:05", utc, &tp_h));
   EXPECT_EQ("03:00:00", cctz::format(kFmt, tp_h, utc));
+  EXPECT_TRUE(parse(RFC3339_full, "1969-12-31T23:59:05+00:00", utc, &tp_h));
+  EXPECT_EQ("1969-12-31T23:00:00+00:00", cctz::format(RFC3339_full, tp_h, utc));
 }
 
 TEST(Parse, TimePointExtendedResolution) {
