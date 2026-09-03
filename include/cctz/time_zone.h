@@ -396,12 +396,8 @@ namespace detail {
 template <typename D>
 std::pair<time_point<seconds>, D> split_seconds(const time_point<D>& tp) {
   auto sec = std::chrono::time_point_cast<seconds>(tp);
-  auto sub = tp - sec;
-  if (sub < D::zero()) {
-    sec -= seconds(1);
-    sub += seconds(1);
-  }
-  return {sec, std::chrono::duration_cast<D>(sub)};
+  if (sec > tp) sec -= seconds{1};  // TODO(C++17): use std::chrono::floor
+  return {sec, std::chrono::duration_cast<D>(tp - sec)};
 }
 
 inline std::pair<time_point<seconds>, seconds> split_seconds(
@@ -492,7 +488,7 @@ join_seconds(
   auto count = sec.time_since_epoch().count();
   if (count > (std::numeric_limits<Rep>::max)()) return false;
   if (count < (std::numeric_limits<Rep>::lowest)()) return false;
-  *tpp = std::chrono::time_point_cast<D>(sec);
+  *tpp = time_point<D>() + D{static_cast<Rep>(count)};
   return true;
 }
 
