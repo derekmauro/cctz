@@ -380,8 +380,10 @@ bool parse(const std::string& fmt, const std::string& input,
   time_point<seconds> sec;
   detail::femtoseconds fs;
   if (!detail::parse(fmt, input, tz, &sec, &fs)) return false;
+
   time_point<std::chrono::duration<Rep, typename Period::type>> tp;
   if (!detail::join_seconds(sec, fs, &tp)) return false;
+
   *tpp = tp;
   return true;
 }
