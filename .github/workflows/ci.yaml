@@ -47,7 +47,7 @@ jobs:
         --test_output=errors
         --test_tag_filters=-benchmark,-fuzztest
 
-  Linux-Clang-libstdc++:
+  Linux-Clang-libstdcxx:
     runs-on: ubuntu-latest
     steps:
 
@@ -102,7 +102,7 @@ jobs:
         --test_output=errors
         --test_tag_filters=-benchmark,-fuzztest
 
-  Linux-Clang-libc++:
+  Linux-Clang-libcxx:
     runs-on: ubuntu-latest
     steps:
 
