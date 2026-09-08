@@ -1669,7 +1669,7 @@ TEST(Parse, TimePointOverflow) {
     // Max time_point<D> is 1970-01-01T02:33:43.372036854775807+00:00.
     EXPECT_TRUE(parse(RFC3339_full,
                       "1970-01-01T02:33:43.3720368547758079+00:00", utc, &tp));
-    EXPECT_EQ(tp, time_point<D>::max());
+    EXPECT_EQ(tp.time_since_epoch(), time_point<D>::max().time_since_epoch());
     EXPECT_EQ("1970-01-01T02:33:43.372036854775807+00:00",
               cctz::format(RFC3339_full, tp, utc));
     // 1 femtosecond beyond max should fail.
@@ -1679,7 +1679,7 @@ TEST(Parse, TimePointOverflow) {
     // Min time_point<D> is 1969-12-31T21:26:16.627963145224192+00:00.
     EXPECT_TRUE(parse(RFC3339_full,
                       "1969-12-31T21:26:16.6279631452241920+00:00", utc, &tp));
-    EXPECT_EQ(tp, time_point<D>::min());
+    EXPECT_EQ(tp.time_since_epoch(), time_point<D>::min().time_since_epoch());
     EXPECT_EQ("1969-12-31T21:26:16.627963145224192+00:00",
               cctz::format(RFC3339_full, tp, utc));
     // 1 femtosecond below min should fail.

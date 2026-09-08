@@ -110,7 +110,7 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Install libxx
+    - name: Install libcxx
       run: |
         sudo apt-get update
         sudo apt-get install -y libc++1 libc++-dev libc++abi-dev
@@ -121,6 +121,7 @@ jobs:
         --build_tag_filters=-fuzztest
         --copt=-DGTEST_REMOVE_LEGACY_TEST_CASEAPI_=1
         --copt=-Werror
+        --cxxopt=-stdlib=libc++
         --cxxopt=-Wall
         --cxxopt=-Wextra
         --cxxopt=-Wc++98-compat-extra-semi
@@ -156,10 +157,8 @@ jobs:
         --cxxopt=-Wno-undef
         --features=external_include_paths
         --keep_going
-        --repo_env=BAZEL_CXXOPTS=-stdlib=libc++
-        --repo_env=BAZEL_LINKLIBS=-lc++:-lm
+        --linkopt=-stdlib=libc++
         --repo_env=CC=clang
-        --repo_env=CXX=clang++
         --show_timestamps
         --test_env="TZDIR=${GITHUB_WORKSPACE}/testdata/zoneinfo"
         --test_output=errors
