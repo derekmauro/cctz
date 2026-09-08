@@ -65,6 +65,7 @@ jobs:
         --build_tag_filters=-fuzztest
         --copt=-DGTEST_REMOVE_LEGACY_TEST_CASEAPI_=1
         --copt=-Werror
+        --cxxopt=-stdlib=libstdc++
         --cxxopt=-Wall
         --cxxopt=-Wextra
         --cxxopt=-Wc++98-compat-extra-semi
