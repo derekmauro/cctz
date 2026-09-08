@@ -165,6 +165,7 @@ jobs:
         --features=external_include_paths
         --keep_going
         --linkopt=-fsanitize=address,undefined
+        --linkopt=-fsanitize-link-c++-runtime
         --linkopt=-stdlib=libc++
         --repo_env=CC=clang
         --show_timestamps
