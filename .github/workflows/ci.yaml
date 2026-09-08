@@ -47,7 +47,7 @@ jobs:
         --test_output=errors
         --test_tag_filters=-benchmark,-fuzztest
 
-  Linux-Clang:
+  Linux-Clang-libstdcxx:
     runs-on: ubuntu-latest
     steps:
 
@@ -96,6 +96,68 @@ jobs:
         --cxxopt=-Wno-undef
         --features=external_include_paths
         --keep_going
+        --repo_env=CC=clang
+        --show_timestamps
+        --test_env="TZDIR=${GITHUB_WORKSPACE}/testdata/zoneinfo"
+        --test_output=errors
+        --test_tag_filters=-benchmark,-fuzztest
+
+  Linux-Clang-libcxx:
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install libcxx
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libc++1 libc++-dev libc++abi-dev
+
+    - name: Tests
+      run: >
+        bazel test ...
+        --build_tag_filters=-fuzztest
+        --copt=-DGTEST_REMOVE_LEGACY_TEST_CASEAPI_=1
+        --copt=-Werror
+        --cxxopt=-stdlib=libc++
+        --cxxopt=-Wall
+        --cxxopt=-Wextra
+        --cxxopt=-Wc++98-compat-extra-semi
+        --cxxopt=-Wcast-qual
+        --cxxopt=-Wconversion
+        --cxxopt=-Wdeprecated-pragma
+        --cxxopt=-Wfloat-overflow-conversion
+        --cxxopt=-Wfloat-zero-conversion
+        --cxxopt=-Wfor-loop-analysis
+        --cxxopt=-Wformat-security
+        --cxxopt=-Wgnu-redeclared-enum
+        --cxxopt=-Winfinite-recursion
+        --cxxopt=-Winvalid-constexpr
+        --cxxopt=-Wliteral-conversion
+        --cxxopt=-Wmissing-declarations
+        --cxxopt=-Woverlength-strings
+        --cxxopt=-Wpointer-arith
+        --cxxopt=-Wself-assign
+        --cxxopt=-Wshadow-all
+        --cxxopt=-Wshorten-64-to-32
+        --cxxopt=-Wsign-conversion
+        --cxxopt=-Wstring-conversion
+        --cxxopt=-Wtautological-overlap-compare
+        --cxxopt=-Wtautological-unsigned-zero-compare
+        --cxxopt=-Wuninitialized
+        --cxxopt=-Wunreachable-code
+        --cxxopt=-Wunused-comparison
+        --cxxopt=-Wunused-local-typedefs
+        --cxxopt=-Wunused-result
+        --cxxopt=-Wvla
+        --cxxopt=-Wwrite-strings
+        --cxxopt=-Wno-unknown-warning-option
+        --cxxopt=-Wno-undef
+        --features=external_include_paths
+        --keep_going
+        --linkopt=-stdlib=libc++
         --repo_env=CC=clang
         --show_timestamps
         --test_env="TZDIR=${GITHUB_WORKSPACE}/testdata/zoneinfo"
