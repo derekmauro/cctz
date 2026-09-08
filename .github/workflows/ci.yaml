@@ -111,7 +111,7 @@ jobs:
         fetch-depth: 0
 
     - name: Debug
-      run: ls -lah `which clang`
+      run: ls -lah /etc/alternatives/clang
 
     - name: Tests
       run: >
