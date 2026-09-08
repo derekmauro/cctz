@@ -110,6 +110,9 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Debug
+      run: ls -lah `which clang`
+
     - name: Tests
       run: >
         bazel test ...
