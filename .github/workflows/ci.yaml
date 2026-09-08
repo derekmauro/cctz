@@ -8,7 +8,11 @@ env:
   BAZEL_CXXOPTS: -std=c++17
   USE_BAZEL_VERSION: 8.5.1
 
+permissions:
+  contents: read
+
 jobs:
+
   Linux-GCC:
     runs-on: ubuntu-latest
     steps:
