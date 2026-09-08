@@ -125,6 +125,8 @@ jobs:
         bazel test ...
         --build_tag_filters=-fuzztest
         --copt=-DGTEST_REMOVE_LEGACY_TEST_CASEAPI_=1
+        --copt=-fsanitize=address,undefined
+        --copt=-fno-sanitize-recover=undefined
         --copt=-Werror
         --cxxopt=-stdlib=libc++
         --cxxopt=-Wall
@@ -162,6 +164,7 @@ jobs:
         --cxxopt=-Wno-undef
         --features=external_include_paths
         --keep_going
+        --linkopt=-fsanitize=address,undefined
         --linkopt=-stdlib=libc++
         --repo_env=CC=clang
         --show_timestamps
