@@ -126,7 +126,7 @@ jobs:
         --build_tag_filters=-fuzztest
         --copt=-DGTEST_REMOVE_LEGACY_TEST_CASEAPI_=1
         --copt=-fsanitize=address,undefined
-        --copt=-fno-sanitize-recover=undefined
+        --copt=-fno-sanitize-recover=all
         --copt=-Werror
         --cxxopt=-stdlib=libc++
         --cxxopt=-Wall
