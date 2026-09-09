@@ -400,7 +400,7 @@ std::pair<time_point<seconds>, D> split_seconds(const time_point<D>& tp) {
   auto sec = std::chrono::time_point_cast<seconds>(tp);
   auto sub = tp - sec;
   // time_point_cast truncates towards zero, so for negative tp with fractional
-  // seconds (e.g., -1.5s), sec is truncated to -1s and sub is negative (-0.5s).
+  // seconds (e.g., -1.5s), sec is truncated (-1s) and sub is negative (-0.5s).
   // Adjust sec and sub so that sec is floored (-2s) and sub is in [0, 1s)
   // (+0.5s).  This adjustment is done after computing sub to avoid overflow
   // when tp is near time_point<D>::min(), where floored sec cannot be converted
