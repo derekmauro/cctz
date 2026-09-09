@@ -399,7 +399,7 @@ template <typename D>
 std::pair<time_point<seconds>, D> split_seconds(const time_point<D>& tp) {
   auto sec = std::chrono::time_point_cast<seconds>(tp);
   auto sub = tp - sec;
-  if (sub.count() < 0) {
+  if (sub < D::zero()) {
     sec -= seconds{1};
     sub += seconds{1};
   }
